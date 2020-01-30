@@ -42,25 +42,10 @@ void startModules(int scale) {
 }
 
 void ResolveMonospaceFont() {
-	auto family = QString();
-	const auto tryFont = [&](const QString &attempt) {
-		if (family.isEmpty()
-			&& !QFontInfo(QFont(attempt)).family().trimmed().compare(
-				attempt,
-				Qt::CaseInsensitive)) {
-			family = attempt;
-		}
-	};
-	tryFont("Consolas");
-	tryFont("Liberation Mono");
-	tryFont("Menlo");
-	tryFont("Courier");
-	if (family.isEmpty()) {
-		const auto type = QFontDatabase::FixedFont;
-		family = QFontDatabase::systemFont(type).family();
-	}
+	const auto type = QFontDatabase::FixedFont;
+	const auto family = QFontDatabase::systemFont(type).family();
 	const auto size = st::normalFont->f.pixelSize();
-	ResolvedMonospaceFont = style::font(size, 0, family);
+	ResolvedMonospaceFont = style::font(size, 0, family)->monospace();
 }
 
 } // namespace

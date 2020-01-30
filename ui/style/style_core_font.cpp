@@ -16,9 +16,6 @@
 #include <QtGui/QFontDatabase>
 
 void style_InitFontsResource() {
-#ifndef DESKTOP_APP_USE_PACKAGED_FONTS
-	Q_INIT_RESOURCE(fonts);
-#endif // !DESKTOP_APP_USE_PACKAGED_FONTS
 #ifdef Q_OS_WIN
 	Q_INIT_RESOURCE(win);
 #elif defined Q_OS_MAC // Q_OS_WIN
@@ -37,7 +34,7 @@ QVector<QString> fontFamilies;
 QMap<uint32, FontData*> fontsMap;
 
 uint32 fontKey(int size, uint32 flags, int family) {
-	return (((uint32(family) << 10) | uint32(size)) << 4) | flags;
+	return (((uint32(family) << 12) | uint32(size)) << 6) | flags;
 }
 
 bool ValidateFont(const QString &familyName, int flags = 0) {
@@ -96,16 +93,6 @@ enum {
 
 	FontTypesCount,
 };
-#ifndef DESKTOP_APP_USE_PACKAGED_FONTS
-QString FontTypeNames[FontTypesCount] = {
-	"DAOpenSansRegular",
-	"DAOpenSansRegularItalic",
-	"DAOpenSansBold",
-	"DAOpenSansBoldItalic",
-	"DAOpenSansSemibold",
-	"DAOpenSansSemiboldItalic",
-};
-#endif // !DESKTOP_APP_USE_PACKAGED_FONTS
 int32 FontTypeFlags[FontTypesCount] = {
 	0,
 	FontItalic,
@@ -114,16 +101,6 @@ int32 FontTypeFlags[FontTypesCount] = {
 	0,
 	FontItalic,
 };
-#ifdef Q_OS_WIN
-QString FontTypeWindowsFallback[FontTypesCount] = {
-	"Segoe UI",
-	"Segoe UI",
-	"Segoe UI",
-	"Segoe UI",
-	"Segoe UI Semibold",
-	"Segoe UI Semibold",
-};
-#endif // Q_OS_WIN
 
 bool Started = false;
 QString Overrides[FontTypesCount];
@@ -137,52 +114,6 @@ void StartFonts() {
 	Started = true;
 
 	style_InitFontsResource();
-
-	const auto integrationExists = Ui::Integration::Exists();
-	if (integrationExists) {
-		Ui::Integration::Instance().startFontsBegin();
-	}
-
-#ifndef DESKTOP_APP_USE_PACKAGED_FONTS
-	bool areGood[FontTypesCount] = { false };
-	for (auto i = 0; i != FontTypesCount; ++i) {
-		const auto name = FontTypeNames[i];
-		const auto flags = FontTypeFlags[i];
-		areGood[i] = LoadCustomFont(":/gui/fonts/" + name + ".ttf", name, flags);
-		Overrides[i] = name;
-#ifdef Q_OS_WIN
-		// Attempt to workaround a strange font bug with Open Sans Semibold not loading.
-		// See https://github.com/telegramdesktop/tdesktop/issues/3276 for details.
-		// Crash happens on "options.maxh / _t->_st->font->height" with "division by zero".
-		// In that place "_t->_st->font" is "semiboldFont" is "font(13 "Open Sans Semibold").
-		const auto fallback = FontTypeWindowsFallback[i];
-		if (!areGood[i]) {
-			if (ValidateFont(fallback, flags)) {
-				Overrides[i] = fallback;
-				UI_LOG(("Fonts Info: Using '%1' instead of '%2'.").arg(fallback).arg(name));
-			}
-		}
-		// Disable default fallbacks to Segoe UI, see:
-		// https://github.com/telegramdesktop/tdesktop/issues/5368
-		//
-		//QFont::insertSubstitution(name, fallback);
-#endif // Q_OS_WIN
-	}
-#endif // !DESKTOP_APP_USE_PACKAGED_FONTS
-#ifdef Q_OS_MAC
-	auto list = QStringList();
-	list.append("STIXGeneral");
-	list.append(".SF NS Text");
-	list.append("Helvetica Neue");
-	list.append("Lucida Grande");
-	for (const auto &name : FontTypeNames) {
-		QFont::insertSubstitutions(name, list);
-	}
-#endif // Q_OS_MAC
-
-	if (integrationExists) {
-		Ui::Integration::Instance().startFontsEnd();
-	}
 }
 
 QString GetPossibleEmptyOverride(const QString &familyName, int32 flags) {
@@ -230,11 +161,12 @@ int registerFontFamily(const QString &family) {
 }
 
 FontData::FontData(int size, uint32 flags, int family, Font *other)
-: f(GetFontOverride(fontFamilies[family], flags))
-, m(f)
+: m(f)
 , _size(size)
 , _flags(flags)
 , _family(family) {
+	const auto fontOverride = GetFontOverride(fontFamilies[family], flags);
+
 	if (other) {
 		memcpy(modified, other, sizeof(modified));
 	} else {
@@ -242,13 +174,13 @@ FontData::FontData(int size, uint32 flags, int family, Font *other)
 	}
 	modified[_flags] = Font(this);
 
+	if (_flags & FontMonospace) {
+		f.setFamily(fontOverride);
+	}
+
 	f.setPixelSize(size);
-	if (_flags & FontBold) {
+	if (_flags & FontBold || fontFamilies[family] == "Open Sans Semibold") {
 		f.setBold(true);
-#ifdef DESKTOP_APP_USE_PACKAGED_FONTS
-	} else if (fontFamilies[family] == "Open Sans Semibold") {
-		f.setWeight(QFont::DemiBold);
-#endif
 	}
 	f.setItalic(_flags & FontItalic);
 	f.setUnderline(_flags & FontUnderline);
@@ -277,6 +209,10 @@ Font FontData::underline(bool set) const {
 
 Font FontData::strikeout(bool set) const {
 	return otherFlagsFont(FontStrikeOut, set);
+}
+
+Font FontData::monospace(bool set) const {
+	return otherFlagsFont(FontMonospace, set);
 }
 
 int FontData::size() const {
